@@ -21,92 +21,107 @@ echo -e "-----------------------------------------------------------------------
 
 if dpkg -l pup | grep -q "ii" ; then
 
-
-    # Get the options
-    while getopts "ht:" OPTION; do
-       case "$OPTION" in
-          h) # display Help
-             echo -e "${GREEN}Usage: ./digglet -t <URL>|<list>"
-             exit;;
-          t) # Enter the target
-             TARGET="$OPTARG";;
-         \?) # Invalid option
-             echo -e "[!] Error: Invalid option"
-             exit;;
-       esac
-
-    done
-
-    # Check Target
-    HOSTLIST="$(mktemp)"
-    if test -z "${TARGET}"; then
-      echo -e "${GREEN}Specify the target(s) with -t "
-      exit 1
-
-    elif test -f "${TARGET}"; then
-      sed -e '/^$/d' -e '/^#/d' "${TARGET}" | sort -u > "${HOSTLIST}"
-
-    else
-      echo -e "${TARGET}" > "${HOSTLIST}"
-
-    fi
+    if dpkg -l tor | grep -q "ii" ; then
 
 
+        # Get the options
+        while getopts "ht:" OPTION; do
+           case "$OPTION" in
+              h) # display Help
+                 echo -e "${GREEN}Usage: ./digglet -t <URL>|<list>"
+                 exit;;
+              t) # Enter the target
+                 TARGET="$OPTARG";;
+             \?) # Invalid option
+                 echo -e "[!] Error: Invalid option"
+                 exit;;
+           esac
 
-    # Main Function
-    mkdir -p results_$TARGET
-    while read -r host; 
+        done
 
-    do
-        FILE=$(mktemp)
-        
-        # Send an HTTP GET request to the specified URL with the parameters
-        curl -s https://osint.sh/subdomain/ -d "domain=$host" > FILE
+        # Check Target
+        HOSTLIST="$(mktemp)"
+        if test -z "${TARGET}"; then
+          echo -e "${GREEN}Specify the target(s) with -t "
+          exit 1
 
-        echo -e "${GREEN}[*]Diggletting ${PURPLE}$host"
-
-        # Test if domain is valid
-        if cat FILE | grep -q "make sure you"; then
-
-          echo -e "${RED} [!]Invalid domain or server down"
+        elif test -f "${TARGET}"; then
+          sed -e '/^$/d' -e '/^#/d' "${TARGET}" | sort -u > "${HOSTLIST}"
 
         else
+          echo -e "${TARGET}" > "${HOSTLIST}"
 
-          # Number of subdomains
-          subnum=$(cat FILE | pup 'div[class="col-md-12"] ' | pup 'span' | sed '5!d')
-          echo -e "${GREEN}[*]Subdomains found :${PURPLE}$subnum"
+        fi
 
-          #Subdomains
-          cat FILE | pup 'table[class="bmw-table css-serial"] ' | pup 'a' | grep ${host}\$ >> results_$TARGET/subdomains 
-          cat results_$TARGET/subdomains | while read -r subdomain; 
-          
-          do 
 
-            prefix=$(echo -e $subdomain | cut -f1 -d".")
-            dig $subdomain| grep $prefix | sed '1d' > FILE
 
-            if cat FILE | grep  -q \^${prefix}\* ;then
+        # Main Function
+        mkdir -p results_$TARGET
+        while read -r host; 
 
-              echo -e "${GREEN} [+] ${subdomain} [active]"
-              echo ${subdomain} >> results_$TARGET/active_subdomains 
+        do
+            FILE=$(mktemp)
+            
+            # Send an HTTP GET request to the specified URL with the parameters
+            curl -s --socks5-hostname localhost:9050 https://osint.sh/subdomain/ -d "domain=$host" > FILE
+
+            echo -e "${GREEN}[*]Diggletting ${PURPLE}$host"
+
+            # Test if domain is valid
+            if cat FILE | grep -q "make sure you"; then
+
+              echo -e "${RED} [!]Invalid domain or server down"
 
             else
 
-              echo -e "${RED} [+] ${subdomain} [no active]"; 
-              echo ${subdomain} >> results_$TARGET/no_active_subdomains 
+              # Number of subdomains
+              subnum=$(cat FILE | pup 'div[class="col-md-12"] ' | pup 'span' | sed '5!d')
+              echo -e "${GREEN}[*]Subdomains found :${PURPLE}$subnum"
+
+              #Subdomains
+              cat FILE | pup 'table[class="bmw-table css-serial"] ' | pup 'a' | grep ${host}\$ >> results_$TARGET/subdomains 
+              cat results_$TARGET/subdomains | while read -r subdomain; 
+              
+              do 
+
+                prefix=$(echo -e $subdomain | cut -f1 -d".")
+                dig $subdomain| grep $prefix | sed '1d' > FILE
+
+                if cat FILE | grep  -q \^${prefix}\* ;then
+
+                  echo -e "${GREEN} [+] ${subdomain} [active]"
+                  echo ${subdomain} >> results_$TARGET/active_subdomains 
+
+                else
+
+                  echo -e "${RED} [+] ${subdomain} [no active]"; 
+                  echo ${subdomain} >> results_$TARGET/no_active_subdomains 
+
+                fi
+
+              done
 
             fi
+                   
+            
+            echo -e "--------------------------------------------------------------------------------"
 
-          done
+        done < $HOSTLIST
 
-        fi
-               
-        
-        echo -e "--------------------------------------------------------------------------------"
+    else
+        echo -e "${RED}[!]You need to install 'tor' package to be able to use digglet, do you want to proceed with the installation? (y/n)"
+        read opt
+        case $opt in
+            y|Y)
+                echo -e "${GREEN}[*] Installing 'tor' package"
+                sudo apt install pup -y
+            ;;
+            *)
+                echo -e "${RED} [!] Leaving digglet "
+            ;;
+        esac
+    fi
 
-    done < $HOSTLIST
-
-    [ -f FILE ] && rm FILE 
 
 else
 
@@ -123,3 +138,5 @@ else
     esac
 
 fi
+
+[ -f FILE ] && rm FILE 
